@@ -1,7 +1,7 @@
 
 import os
 
-from aspect.io import AutoDataset, dataframe_checksum, file_checksum
+from providence.io import AutoDataset, dataframe_checksum, file_checksum
 
 def test_dataframe_checksum_is_stable():
 
@@ -34,7 +34,7 @@ def test_local_source_checksum(tmp_path):
     filename = tmp_path / "data.csv"
     filename.write_text("x\n1\n2\n3\n")
 
-    loaded = AutoDataset.load(str(filename))
+    loaded = AutoDataset.load(filename)
 
     assert loaded.source.checksum == file_checksum(filename)
     assert loaded.source.verify() is True
@@ -47,7 +47,7 @@ def test_local_source_verification_detects_change(tmp_path):
         "x\n1\n2\n3\n"
     )
 
-    loaded = AutoDataset.load(str(filename))
+    loaded = AutoDataset.load(filename)
     filename.write_text(
         "x\n1\n2\n4\n"
     )

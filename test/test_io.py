@@ -1,4 +1,4 @@
-from aspect.io import AutoDataset, DataSource
+from providence.io import AutoDataset, DataSource
 
 
 def test_mapping_source_records_checksum(tmp_path):
@@ -37,7 +37,7 @@ def test_local_file_source_is_absolute(tmp_path):
     )
 
     resolved = AutoDataset.load(
-        str(filename),
+        filename,
         cache=tmp_path / "cache",
     )
 
@@ -106,23 +106,3 @@ def test_hf_source_records_resolved_revision(monkeypatch):
         revision=expected_revision,
         requested_revision="main",
     )
-
-
-def test_config_only_checkpoint_roundtrip(tmp_path):
-    from aspect import DataPipeline
-    pipeline = DataPipeline({
-        "logx": [
-            "x",
-            "log",
-        ],
-    })
-
-    checkpoint = tmp_path / "pipeline"
-    pipeline.save(checkpoint)
-    restored = DataPipeline.load(checkpoint)
-
-    assert restored.to_config() == pipeline.to_config()
-
-    assert restored.data_in is None
-    assert restored.data_out is None
-    assert restored.data_out_example is None

@@ -3,8 +3,7 @@ import json
 import pandas as pd
 import pytest
 
-from aspect.data import DataPipeline
-from aspect.io import DataSource
+from providence import DataResolver, DataSource
 
 
 DATA = {
@@ -13,36 +12,20 @@ DATA = {
 }
 
 
-def make_pipeline(tmp_path):
-    pipeline = DataPipeline(
-        {"logx": ["x", "log"]},
-        columns_to_keep=["labels"],
+def make_data(tmp_path):
+    data = DataResolver(
+        DATA,
         cache_dir=tmp_path / "cache",
     )
-    pipeline(DATA)
-    return pipeline
-
-
-def test_pipeline_config_roundtrip(tmp_path):
-    pipeline = make_pipeline(tmp_path)
-
-    filename = tmp_path / "pipeline.json"
-    expected = pipeline.to_config(filename)
-
-    restored = DataPipeline.from_config(
-        str(filename),
-        cache_dir=tmp_path / "restored-cache",
-    )
-
-    assert restored.to_config() == expected
+    return data
 
 
 def test_ephemeral_source_is_packaged(tmp_path):
-    pipeline = make_pipeline(tmp_path)
+    data = make_data(tmp_path)
 
     checkpoint = tmp_path / "checkpoint"
 
-    pipeline.save(checkpoint)
+    data.save(checkpoint)
 
     assert (checkpoint / "config.json").exists()
     assert (checkpoint / "data.parquet").exists()
@@ -50,29 +33,28 @@ def test_ephemeral_source_is_packaged(tmp_path):
 
     assert (checkpoint / "example.parquet").exists()
 
-    restored = DataPipeline.load(
+    restored = DataResolver.load(
         checkpoint,
         cache_dir=tmp_path / "load-cache",
     )
 
-    assert restored.data_in is not None
-    assert len(restored.data_in) == 3
-    assert restored.data_out is None
+    assert restored.data is not None
+    assert len(restored.data) == 3
 
 
 def test_retain_processed_columns(tmp_path):
-    pipeline = make_pipeline(tmp_path)
+    data = make_data(tmp_path)
 
     checkpoint = tmp_path / "checkpoint"
 
-    pipeline.save(
+    data.save(
         checkpoint,
         save_transformed_columns=["logx"],
     )
 
     assert (checkpoint / "transformed.parquet").exists()
 
-    restored = DataPipeline.load(
+    restored = DataResolver.load(
         checkpoint,
         cache_dir=tmp_path / "load-cache",
     )
@@ -83,35 +65,35 @@ def test_retain_processed_columns(tmp_path):
 
 
 def test_force_no_source_packaging(tmp_path):
-    pipeline = make_pipeline(tmp_path)
+    data = make_data(tmp_path)
 
     checkpoint = tmp_path / "checkpoint"
 
-    pipeline.save(
+    data.save(
         checkpoint,
         save_source_data=False,
     )
 
     assert not (checkpoint / "data.parquet").exists()
 
-    restored = DataPipeline.load(
+    restored = DataResolver.load(
         checkpoint,
         cache_dir=tmp_path / "load-cache",
     )
 
-    assert restored.data_in is None
+    assert restored.data is None
 
 
 def test_missing_retained_column_raises(tmp_path):
     import pytest
 
-    pipeline = make_pipeline(tmp_path)
+    data = make_data(tmp_path)
 
     with pytest.raises(
         KeyError,
         match="absent",
     ):
-        pipeline.save(
+        data.save(
             tmp_path / "checkpoint",
             save_transformed_columns=["does_not_exist"],
         )
@@ -119,8 +101,8 @@ def test_missing_retained_column_raises(tmp_path):
 
 def test_remote_source_is_reference_only(tmp_path):
     
-    pipeline = make_pipeline(tmp_path)
-    pipeline.data_source = DataSource(
+    data = make_data(tmp_path)
+    data.data_source = DataSource(
         uri="hf://datasets/example/data@abc123:train",
         requested_uri="hf://datasets/example/data@main:train",
         revision="abc123",
@@ -128,7 +110,7 @@ def test_remote_source_is_reference_only(tmp_path):
     )
 
     checkpoint = tmp_path / "checkpoint"
-    pipeline.save(checkpoint)
+    data.save(checkpoint)
 
     assert not (checkpoint / "data.parquet").exists()
 
@@ -156,19 +138,18 @@ def test_checkpoint_reconstructs_verified_local_source(tmp_path):
         index=False,
     )
 
-    pipeline = DataPipeline()
-    pipeline(str(source))
+    data = DataResolver(source)
 
-    checkpoint = tmp_path / "pipeline"
+    checkpoint = tmp_path / "data"
 
-    pipeline.save(
+    data.save(
         checkpoint,
         save_source_data=False,
     )
 
-    restored = DataPipeline.load(checkpoint)
+    restored = DataResolver.load(checkpoint)
 
-    assert restored.data_in is not None
+    assert restored.data is not None
     assert restored.data_source.verify() is True
 
 
@@ -183,12 +164,11 @@ def test_checkpoint_rejects_modified_local_source(tmp_path):
         index=False,
     )
 
-    pipeline = DataPipeline()
-    pipeline(str(source))
+    data = DataResolver(source)
 
-    checkpoint = tmp_path / "pipeline"
+    checkpoint = tmp_path / "data"
 
-    pipeline.save(
+    data.save(
         checkpoint,
         save_source_data=False,
     )
@@ -204,7 +184,7 @@ def test_checkpoint_rejects_modified_local_source(tmp_path):
         ValueError,
         match="checksum",
     ):
-        DataPipeline.load(checkpoint)
+        DataResolver.load(checkpoint)
 
 
 def test_embedded_checkpoint_ignores_modified_original_source(
@@ -220,12 +200,11 @@ def test_embedded_checkpoint_ignores_modified_original_source(
         index=False,
     )
 
-    pipeline = DataPipeline()
-    pipeline(str(source))
+    data = DataResolver(str(source))
 
-    checkpoint = tmp_path / "pipeline"
+    checkpoint = tmp_path / "data"
 
-    pipeline.save(
+    data.save(
         checkpoint,
         save_source_data=True,
     )
@@ -237,6 +216,6 @@ def test_embedded_checkpoint_ignores_modified_original_source(
         index=False,
     )
 
-    restored = DataPipeline.load(checkpoint)
+    restored = DataResolver.load(checkpoint)
 
     assert restored.data_in["x"] == [1., 2., 3.]

@@ -1,4 +1,4 @@
-"""Data pipeline class."""
+"""Data resolver class."""
 
 from typing import TYPE_CHECKING, Any
 from collections.abc import Iterable, Mapping
@@ -24,21 +24,41 @@ DEFAULT_FORMAT: str = "numpy"
 CONFIG_FILENAME: str = "config.json"
 DATA_FILENAME: str = "data.parquet"
 EXAMPLE_FILENAME: str = "example.parquet"
+SCHEMA_VERSION: str = "1"
 
 
 class DataResolver:
-    """Data resolving.
+    """Resolve datasets and track their provenance.
 
     Examples
-    ========
-    
+    --------
+    Select rows without modifying the original dataset:
+
+    >>> data = DataResolver({"x": list(range(10))})
+    >>> subset = data.select_rows(2, 5)
+    >>> list(subset.data["x"])
+    [2, 3, 4]
+    >>> len(data.data)
+    10
+
+    Chain selections and restore a reference-only checkpoint:
+
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> import pandas as pd
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     source = Path(tmp) / "data.parquet"
+    ...     pd.DataFrame({"x": list(range(10))}).to_parquet(source)
+    ...     selected = DataResolver(source).select_rows(2, 8).select_rows(1, 3)
+    ...     selected.save(Path(tmp) / "checkpoint", save_source_data=False)
+    ...     restored = DataResolver.load(Path(tmp) / "checkpoint")
+    ...     print(list(restored.data["x"]))
+    [3, 4]
 
     """
     def __init__(
         self,
         data: str | Mapping[str, Any],
-        start: int | None = None,
-        end: int | None = None,
         cache_dir: str | None = None,
         _file_checksum: str | None = None,
         _version: str = __version__,
@@ -49,53 +69,106 @@ class DataResolver:
         self._data_requested = data
         self.data = None
         self._file_checksum = _file_checksum
-        self.slice = (start, end)
+        self.selected_rows = None
         self.data_source = None
         self.data_example = None
         self.cache_dir = cache_dir or CACHE_DIR
         self._data_loaded = False
+        self._init()
+        
 
+    def _init(self) -> None:
         self.data = self._resolve_data(
             self._data_requested,
-            *self.slice,
         )
         if self.data is None:
             raise AttributeError(
                 f"Data could not be loaded from {self._data_requested}."
             )
         self._data_loaded = self.data is not None
+
         self.data_example, self.data_shape = self._inspect_data(
             self.data,
             self.data_example,
         )
+        return None
 
-    def __eq__(self, other) -> bool:
-        return all([
-            self.data_source == other.data_source,
-            self.data_shape == other.data_shape,
-        ])
-    
     def _resolve_data(
         self,
         data: DataLike,
-        start: int | None = None,
-        end: int | None = None,
         cache_dir: str | None = None
     ) -> Dataset | IterableDataset:
         resolved = AutoDataset.load(
             data, 
             cache_dir=cache_dir or self.cache_dir,
         )
-        nrows = resolved._dataset.num_rows
-        skip = 0 if start is None else start
-        take = (nrows if end is None else end) - skip
-        if (take - skip) < nrows:
-            print_err(
-                f"[INFO] Reading dataset from row {skip} to row "
-                f"{take + skip} / {nrows}."
-            )
         self.data_source = resolved.source
-        return resolved._dataset.skip(skip).take(take)
+        return resolved._dataset
+
+    def _apply_selection(
+        self,
+        start: int | None = None,
+        end: int | None = None
+    ) -> "DataResolver":
+        if self.selected_rows is None:
+            selected_rows = []
+        else:
+            selected_rows = self.selected_rows.copy()
+        
+        nrows = self.data.num_rows
+        indices = tuple(slice(start, end).indices(nrows))
+        skip = indices[0]
+        take = indices[1] - skip
+
+        selected = type(self)(
+            self.data.select(range(*indices)),
+            cache_dir=self.cache_dir,
+        )
+
+        selected.data_source = self.data_source
+        selected_rows.append((start, end))
+        selected.selected_rows = selected_rows
+        return selected
+
+    @staticmethod
+    def _normalize_selected_rows(
+        start: Iterable[Iterable[int]] | int | None = None,
+        end: int | None = None
+    ):
+        if start is None and end is None:
+            return None
+        if isinstance(start, int) or (start is None and isinstance(end, int)):
+            return [(start, end)]
+        elif isinstance(start, Iterable) and not isinstance(start, str):
+            start = list(start)
+            if len(start) == 0:
+                raise ValueError(f"start was iterable but length-0: {start}")
+            elif len(start) == 2 and all(isinstance(item, int) for item in start):
+                start = [start]
+            for i, item in enumerate(start):
+                if isinstance(item, Iterable) and not isinstance(item, str):
+                    if len(item) != 2:
+                        raise ValueError(f"start was iterable but item {i} was not a 2-tuple: {item}")
+                else:
+                    raise ValueError(f"start was iterable but item {i} was not: {item}\n{start=}")
+            return [tuple(item) for item in start]
+        else: 
+            raise ValueError(f"Cannot normalize inputs: {start=}, {end=}")
+        
+    def select_rows(
+        self,
+        start: Iterable[Iterable[int]] | int | None = None,
+        end: int | None = None
+    ) -> "DataResolver":
+        """Return a new resolver containing rows [start:end]."""
+
+        if start is None and end is None:
+            return self  # pass through
+        selections = self._normalize_selected_rows(start, end)
+        data = self
+        for item in selections:
+            data = data._apply_selection(*item)
+        return data
 
     @staticmethod
     def _inspect_data(data: Dataset, example=None, format: str = DEFAULT_FORMAT) -> None:
@@ -145,16 +218,22 @@ class DataResolver:
             discard_example_data=True to turn off.
 
         """
-        path = Path(path)
-        path.mkdir(parents=True, exist_ok=True)
 
         if self.data_source is None:
             source = DataSource()
         else:
             source = self.data_source
 
+
+        path = Path(path)
+        path.mkdir(parents=True, exist_ok=True)
+
         if save_source_data is None:
             save_source_data = not source.is_remote
+        if not save_source_data and source.uri is None:
+            raise ValueError(
+                "Reference-only checkpoint requires a source URI"
+            )
         if save_source_data:
             data_filename = str(path / DATA_FILENAME)
             (
@@ -168,7 +247,7 @@ class DataResolver:
 
         checkpoint_config = {
             "source": source.to_config(),
-            "slice": list(self.slice),
+            "selected_rows": self.selected_rows,
             "artefacts": {
                 "source_data": DATA_FILENAME if save_source_data else None,
                 "data_checksum": checksum,
@@ -181,6 +260,7 @@ class DataResolver:
                     else None
                 ),
             },
+            "schema_version": SCHEMA_VERSION,
         }
 
         save_json(
@@ -216,37 +296,47 @@ class DataResolver:
         data_filename = artefacts.get("source_data")
         data_checksum = artefacts.get("data_checksum") 
         example_filename = artefacts.get("example")
-        _slice = config.get("slice", (None, None))
+        selected_rows = config.get("selected_rows")
+        schema_version = config.get("schema_version")
+
+        if schema_version != SCHEMA_VERSION:
+            raise AttributeError(
+                f"Checkpoint schema version is {schema_version}, incompatible with package version {SCHEMA_VERSION}."
+            )
 
         if data_filename is not None:
             data_uri = str(path / data_filename)
             this_checksum = file_checksum(data_uri)
             if not this_checksum == data_checksum:
                 raise IOError(f"Checksum for {data_uri} should be {data_checksum}, but was {this_checksum}.")
-            start, end = None, None
+            has_embedded_data = True
         elif data_source is not None:
-            if (
-                data_source.uri is not None 
-                and not data_source.is_remote
+            if data_source.uri is None:
+                raise ValueError(
+                    f"Reference-only checkpoint has no source URI:\n{data_source}"
+                )
+            elif (
+                not data_source.is_remote
                 and not os.path.exists(data_source.uri)
             ):
                 raise FileNotFoundError(
-                    "Checkpoint references external training data "
+                    "Checkpoint references non-remote data "
                     f"at {data_source.uri}, but that source does not exist."
                 )
-            data_source.assert_verified()
+            if not data_source.is_remote:
+                data_source.assert_verified()
             data_uri = data_source.uri
-            start, end = _slice
+            has_embedded_data = False
         else:
             raise AttributeError(f"Checkpoint is missing a data definition!\n{config=}")
 
         data = cls(
             data=data_uri,
-            start=start,
-            end=end,
             cache_dir=cache_dir,
-            _file_checksum=data_checksum,
         )
+        if not has_embedded_data and selected_rows is not None:
+            data = data.select_rows(selected_rows)
+        data.selected_rows = cls._normalize_selected_rows(selected_rows)
         if data_source is not None:
             data.data_source = data_source
 

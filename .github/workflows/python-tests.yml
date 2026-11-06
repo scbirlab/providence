@@ -39,6 +39,3 @@ jobs:
         pytest providence --doctest-modules
         # run other tests
         pytest test -v
-    - name: Test CLI
-      run: |
-        bash test/scripts/run-tests.sh

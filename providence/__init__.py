@@ -5,3 +5,4 @@ __author__ = "Eachan Johnson"
 __version__ = version(app_name)
 
 from .data import DataResolver
+from .io import DataSource

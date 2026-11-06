@@ -19,6 +19,7 @@ else:
     Dataset, DataFrame, IterableDataset = Any, Any, Any
 
 from .package_data import resolve_cache, configure_hf_cache
+from .typing import DataLike
 
 
 DATASETS_PREFIX: str = "hf://datasets/"
@@ -149,16 +150,6 @@ class DataSource:
     requested_revision: str | None = None
     checksum: str | None = None
 
-    def __eq__(self, other) -> bool:
-        if self.is_remote:
-            return all([
-                other.is_remote,
-                self.uri == other.uri,
-                self.revision == other.revision,
-            ])
-        else:
-            return self.checksum == other.checksum
-
     @classmethod
     def from_config(
         cls,
@@ -194,12 +185,6 @@ class DataSource:
             self.revision is not None,
         ])
 
-    def file_checksum(self, filename: str):
-        checksum = file_checksum(filename)
-        self.checksum = checksum
-        return checksum
-
-
     def verify(self, filename=None) -> bool | None:
         """Verify local source contents against recorded provenance.
 
@@ -225,11 +210,14 @@ class DataSource:
         if filename is None:
             filename = self.uri
 
-        if self.verify(filename) is False:
+        if filename is None or not os.path.isfile(filename):
+            raise FileNotFoundError(f"Provide an existing file to verify: {filename=}, {self}")
+
+        if not self.verify(filename) is True:
             raise ValueError(
                 "Data source checksum does not match "
                 "the recorded training-data provenance: "
-                f"{self.uri!r}: ({self.checksum=} != {file_checksum(filename)=})."
+                f"{self.uri}: ({self.checksum=} != {file_checksum(filename)=}).\n{self}"
             )
 
 
@@ -357,7 +345,7 @@ def _load_from_dataframe(
             return _load_from_file(
                 filename=_path, 
                 cache_dir=cache_dir,
-            )
+            ), source
         dataframe.to_parquet(_path, index=False)
         ds = _load_from_file(
             filename=_path, 
@@ -440,15 +428,17 @@ def _resolve_hf_hub_dataset(
             revision=revision, 
             cache_dir=datasets_cache,
         )
+    uri = (
+        f"{DATASETS_PREFIX}{repo}@{revision}" 
+        + ('~' + config if config is not None else '')
+        + (':' + split if split is not None else '')
+    )
     if isinstance(ds, DatasetDict):
+        print_err(f"[WARN] No split specified for {uri=}, concatenating {','.join(map(str, list(ds)))}")
         ds = concatenate_datasets([v for key, v in ds.items()])
     
     source = DataSource(
-        uri=(
-            f"{DATASETS_PREFIX}{repo}@{revision}" 
-            + ('~' + config if config is not None else '')
-            + (':' + split if split is not None else '')
-        ),
+        uri=uri,
         requested_uri=original_ref,
         revision=revision,
         requested_revision=requested_revision,
@@ -469,11 +459,17 @@ class AutoDataset:
     @classmethod
     def load(
         cls, 
-        data: str | DataFrame, 
+        data: DataLike, 
         cache_dir: str | None = None
     ) -> "AutoDataset":
         from datasets import load_dataset, Dataset, IterableDataset
         from pandas import DataFrame
+
+        if isinstance(data, os.PathLike):
+            if os.path.exists(data):
+                data = str(data)
+            else:
+                raise FileNotFoundError(f"File {data} does not exist.")
 
         if isinstance(data, (Dataset, IterableDataset)):
             dataset = data

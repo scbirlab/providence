@@ -475,6 +475,12 @@ class AutoDataset:
         from datasets import load_dataset, Dataset, IterableDataset
         from pandas import DataFrame
 
+        if isinstance(data, os.PathLike):
+            if os.path.exists(data):
+                data = str(data)
+            else:
+                raise FileNotFoundError(f"File {data} does not exist.")
+
         if isinstance(data, (Dataset, IterableDataset)):
             dataset = data
             source = None

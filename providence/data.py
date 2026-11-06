@@ -1,4 +1,4 @@
-"""Data pipeline class."""
+"""Data resolver class."""
 
 from typing import TYPE_CHECKING, Any
 from collections.abc import Iterable, Mapping
@@ -24,6 +24,7 @@ DEFAULT_FORMAT: str = "numpy"
 CONFIG_FILENAME: str = "config.json"
 DATA_FILENAME: str = "data.parquet"
 EXAMPLE_FILENAME: str = "example.parquet"
+SCHEMA_VERSION: str = "1"
 
 
 class DataResolver:
@@ -232,6 +233,7 @@ class DataResolver:
                     else None
                 ),
             },
+            "schema_version": SCHEMA_VERSION,
         }
 
         save_json(

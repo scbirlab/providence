@@ -352,7 +352,7 @@ def _load_from_dataframe(
             return _load_from_file(
                 filename=_path, 
                 cache_dir=cache_dir,
-            )
+            ), source
         dataframe.to_parquet(_path, index=False)
         ds = _load_from_file(
             filename=_path, 
@@ -435,15 +435,17 @@ def _resolve_hf_hub_dataset(
             revision=revision, 
             cache_dir=datasets_cache,
         )
+    uri = (
+        f"{DATASETS_PREFIX}{repo}@{revision}" 
+        + ('~' + config if config is not None else '')
+        + (':' + split if split is not None else '')
+    )
     if isinstance(ds, DatasetDict):
+        print_err(f"[WARN] No split specified for {uri=}, concatenating {','.join(map(str, list(ds)))}")
         ds = concatenate_datasets([v for key, v in ds.items()])
     
     source = DataSource(
-        uri=(
-            f"{DATASETS_PREFIX}{repo}@{revision}" 
-            + ('~' + config if config is not None else '')
-            + (':' + split if split is not None else '')
-        ),
+        uri=uri,
         requested_uri=original_ref,
         revision=revision,
         requested_revision=requested_revision,

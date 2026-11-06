@@ -28,11 +28,32 @@ SCHEMA_VERSION: str = "1"
 
 
 class DataResolver:
-    """Data resolving.
+    """Resolve datasets and track their provenance.
 
     Examples
-    ========
-    
+    --------
+    Select rows without modifying the original dataset:
+
+    >>> data = DataResolver({"x": list(range(10))})
+    >>> subset = data.select_rows(2, 5)
+    >>> list(subset.data["x"])
+    [2, 3, 4]
+    >>> len(data.data)
+    10
+
+    Chain selections and restore a reference-only checkpoint:
+
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> import pandas as pd
+    >>> with tempfile.TemporaryDirectory() as tmp:
+    ...     source = Path(tmp) / "data.parquet"
+    ...     pd.DataFrame({"x": list(range(10))}).to_parquet(source)
+    ...     selected = DataResolver(source).select_rows(2, 8).select_rows(1, 3)
+    ...     selected.save(Path(tmp) / "checkpoint", save_source_data=False)
+    ...     restored = DataResolver.load(Path(tmp) / "checkpoint")
+    ...     print(list(restored.data["x"]))
+    [3, 4]
 
     """
     def __init__(
@@ -95,12 +116,12 @@ class DataResolver:
             selected_rows = self.selected_rows.copy()
         
         nrows = self.data.num_rows
-        indices = slice(start, end).indices(nrows)
+        indices = tuple(slice(start, end).indices(nrows))
         skip = indices[0]
         take = indices[1] - skip
 
         selected = type(self)(
-            self.data.skip(skip).take(take),
+            self.data.select(range(*indices)),
             cache_dir=self.cache_dir,
         )
 
@@ -197,13 +218,19 @@ class DataResolver:
             discard_example_data=True to turn off.
 
         """
-        path = Path(path)
-        path.mkdir(parents=True, exist_ok=True)
 
         if self.data_source is None:
             source = DataSource()
         else:
             source = self.data_source
+
+        if not save_source_data and source.uri is None:
+            raise ValueError(
+                "Reference-only checkpoint requires a source URI"
+            )
+
+        path = Path(path)
+        path.mkdir(parents=True, exist_ok=True)
 
         if save_source_data is None:
             save_source_data = not source.is_remote
@@ -270,6 +297,12 @@ class DataResolver:
         data_checksum = artefacts.get("data_checksum") 
         example_filename = artefacts.get("example")
         selected_rows = config.get("selected_rows")
+        schema_version = config.get("schema_version")
+
+        if schema_version != SCHEMA_VERSION:
+            raise AttributeError(
+                f"Checkpoint schema version is {schema_version}, incompatible with package version {SCHEMA_VERSION}."
+            )
 
         if data_filename is not None:
             data_uri = str(path / data_filename)
@@ -301,7 +334,7 @@ class DataResolver:
             cache_dir=cache_dir,
         )
         if not has_embedded_data and selected_rows is not None:
-            data = data.select_rows(*selected_rows)
+            data = data.select_rows(selected_rows)
         data.selected_rows = cls._normalize_selected_rows(selected_rows)
         if data_source is not None:
             data.data_source = data_source

@@ -150,16 +150,6 @@ class DataSource:
     requested_revision: str | None = None
     checksum: str | None = None
 
-    def __eq__(self, other) -> bool:
-        if self.is_remote:
-            return all([
-                other.is_remote,
-                self.uri == other.uri,
-                self.revision == other.revision,
-            ])
-        else:
-            return self.checksum == other.checksum
-
     @classmethod
     def from_config(
         cls,
@@ -220,7 +210,7 @@ class DataSource:
         if filename is None:
             filename = self.uri
 
-        if self.verify(filename) is False:
+        if not self.verify(filename) is True:
             raise ValueError(
                 "Data source checksum does not match "
                 "the recorded training-data provenance: "

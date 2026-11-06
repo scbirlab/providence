@@ -46,21 +46,13 @@ def test_force_no_source_packaging(tmp_path):
     data = make_data(tmp_path)
 
     checkpoint = tmp_path / "checkpoint"
-
-    data.save(
-        checkpoint,
-        save_source_data=False,
-    )
-
-    assert not (checkpoint / "data.parquet").exists()
-
     with pytest.raises(
         ValueError,
-        match="no source URI",
+        match="source URI",
     ):
-        restored = DataResolver.load(
+        data.save(
             checkpoint,
-            cache_dir=tmp_path / "load-cache",
+            save_source_data=False,
         )
 
 

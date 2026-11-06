@@ -68,12 +68,6 @@ class DataResolver:
             self.data,
             self.data_example,
         )
-
-    def __eq__(self, other) -> bool:
-        return all([
-            self.data_source == other.data_source,
-            self.data_shape == other.data_shape,
-        ])
     
     def _resolve_data(
         self,

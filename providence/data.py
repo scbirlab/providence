@@ -224,16 +224,16 @@ class DataResolver:
         else:
             source = self.data_source
 
-        if not save_source_data and source.uri is None:
-            raise ValueError(
-                "Reference-only checkpoint requires a source URI"
-            )
 
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
 
         if save_source_data is None:
             save_source_data = not source.is_remote
+        if not save_source_data and source.uri is None:
+            raise ValueError(
+                "Reference-only checkpoint requires a source URI"
+            )
         if save_source_data:
             data_filename = str(path / DATA_FILENAME)
             (
@@ -323,7 +323,8 @@ class DataResolver:
                     "Checkpoint references non-remote data "
                     f"at {data_source.uri}, but that source does not exist."
                 )
-            data_source.assert_verified()
+            if not data_source.is_remote:
+                data_source.assert_verified()
             data_uri = data_source.uri
             has_embedded_data = False
         else:

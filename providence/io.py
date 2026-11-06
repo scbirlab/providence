@@ -19,6 +19,7 @@ else:
     Dataset, DataFrame, IterableDataset = Any, Any, Any
 
 from .package_data import resolve_cache, configure_hf_cache
+from .typing import DataLike
 
 
 DATASETS_PREFIX: str = "hf://datasets/"
@@ -194,12 +195,6 @@ class DataSource:
             self.revision is not None,
         ])
 
-    def file_checksum(self, filename: str):
-        checksum = file_checksum(filename)
-        self.checksum = checksum
-        return checksum
-
-
     def verify(self, filename=None) -> bool | None:
         """Verify local source contents against recorded provenance.
 
@@ -229,7 +224,7 @@ class DataSource:
             raise ValueError(
                 "Data source checksum does not match "
                 "the recorded training-data provenance: "
-                f"{self.uri!r}: ({self.checksum=} != {file_checksum(filename)=})."
+                f"{self.uri}: ({self.checksum=} != {file_checksum(filename)=})."
             )
 
 
@@ -469,7 +464,7 @@ class AutoDataset:
     @classmethod
     def load(
         cls, 
-        data: str | DataFrame, 
+        data: DataLike, 
         cache_dir: str | None = None
     ) -> "AutoDataset":
         from datasets import load_dataset, Dataset, IterableDataset

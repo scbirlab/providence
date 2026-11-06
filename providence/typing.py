@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING, Any, TypeAlias, Union
 from collections.abc import Iterable, Mapping
+from os import PathLike
 
 from datasets import Dataset, IterableDataset
 from pandas import DataFrame
@@ -17,7 +18,8 @@ DataLike: TypeAlias = Union[
     DataFrame, 
     Mapping[str, ArrayLike], 
     Dataset, 
-    IterableDataset
+    IterableDataset,
+    PathLike
 ]
 
 StrOrIterableOfStr = Union[str, Iterable[str]]

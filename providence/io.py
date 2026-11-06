@@ -210,11 +210,14 @@ class DataSource:
         if filename is None:
             filename = self.uri
 
+        if filename is None or not os.path.isfile(filename):
+            raise FileNotFoundError(f"Provide an existing file to verify: {filename=}, {self}")
+
         if not self.verify(filename) is True:
             raise ValueError(
                 "Data source checksum does not match "
                 "the recorded training-data provenance: "
-                f"{self.uri}: ({self.checksum=} != {file_checksum(filename)=})."
+                f"{self.uri}: ({self.checksum=} != {file_checksum(filename)=}).\n{self}"
             )
 
 

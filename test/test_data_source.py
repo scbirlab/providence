@@ -12,8 +12,6 @@ def test_pipeline_retains_data_source(tmp_path):
         cache_dir=tmp_path,
     )
 
-    pipeline()
-
     assert isinstance(data.data_source, DataSource)
     assert data.data_source.uri is None
     assert data.data_source.revision is None

@@ -42,28 +42,6 @@ def test_ephemeral_source_is_packaged(tmp_path):
     assert len(restored.data) == 3
 
 
-def test_retain_processed_columns(tmp_path):
-    data = make_data(tmp_path)
-
-    checkpoint = tmp_path / "checkpoint"
-
-    data.save(
-        checkpoint,
-        save_transformed_columns=["logx"],
-    )
-
-    assert (checkpoint / "transformed.parquet").exists()
-
-    restored = DataResolver.load(
-        checkpoint,
-        cache_dir=tmp_path / "load-cache",
-    )
-
-    assert restored.data_out is not None
-    assert restored.data_out.column_names == ["logx"]
-    assert len(restored.data_out) == 3
-
-
 def test_force_no_source_packaging(tmp_path):
     data = make_data(tmp_path)
 
@@ -76,26 +54,13 @@ def test_force_no_source_packaging(tmp_path):
 
     assert not (checkpoint / "data.parquet").exists()
 
-    restored = DataResolver.load(
-        checkpoint,
-        cache_dir=tmp_path / "load-cache",
-    )
-
-    assert restored.data is None
-
-
-def test_missing_retained_column_raises(tmp_path):
-    import pytest
-
-    data = make_data(tmp_path)
-
     with pytest.raises(
-        KeyError,
-        match="absent",
+        ValueError,
+        match="no source URI",
     ):
-        data.save(
-            tmp_path / "checkpoint",
-            save_transformed_columns=["does_not_exist"],
+        restored = DataResolver.load(
+            checkpoint,
+            cache_dir=tmp_path / "load-cache",
         )
 
 
@@ -218,4 +183,49 @@ def test_embedded_checkpoint_ignores_modified_original_source(
 
     restored = DataResolver.load(checkpoint)
 
-    assert restored.data_in["x"] == [1., 2., 3.]
+    assert restored.data["x"] == [1., 2., 3.]
+
+
+def test_embedded_slice_roundtrip(tmp_path):
+    original = DataResolver(
+        {"x": list(range(10))},
+        cache_dir=str(tmp_path / "cache"),
+    )
+
+    selected = original.select_rows(2, 5)
+
+    assert selected.data["x"] == [2, 3, 4]
+    assert original.data["x"] == list(range(10))
+    assert selected.data_source == original.data_source
+
+    path = tmp_path / "checkpoint"
+    selected.save(path)
+
+    restored = DataResolver.load(path)
+
+    assert restored.data["x"] == [2, 3, 4]
+    assert restored.selected_rows == selected.selected_rows
+
+
+def test_reference_slice_roundtrip(tmp_path):
+    source = tmp_path / "data.parquet"
+
+    pd.DataFrame({
+        "x": list(range(10)),
+    }).to_parquet(source, index=False)
+
+    selected = (
+        DataResolver(source)
+        .select_rows(2, 5)
+    )
+
+    path = tmp_path / "checkpoint"
+    selected.save(path, save_source_data=False)
+
+    assert not (path / "data.parquet").exists()
+
+    restored = DataResolver.load(path)
+
+    assert restored.data["x"] == [2, 3, 4]
+    assert restored.selected_rows == selected.selected_rows
+    assert restored.data_source.verify() is True

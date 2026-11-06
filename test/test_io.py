@@ -10,7 +10,7 @@ def test_mapping_source_records_checksum(tmp_path):
             ],
             "y": [1., 2.],
         },
-        cache=tmp_path,
+        cache_dir=tmp_path,
     )
 
     assert isinstance(resolved.source, DataSource)
@@ -38,7 +38,7 @@ def test_local_file_source_is_absolute(tmp_path):
 
     resolved = AutoDataset.load(
         filename,
-        cache=tmp_path / "cache",
+        cache_dir=tmp_path / "cache",
     )
 
     assert resolved.source.uri == str(filename.resolve())
@@ -59,7 +59,7 @@ def test_dataset_source_is_ephemeral():
 
 
 def test_hf_source_records_resolved_revision(monkeypatch):
-    import aspect.io as io
+    import providence.io as io
     import datasets
 
     def fake_load_dataset(

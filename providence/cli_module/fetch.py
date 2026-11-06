@@ -12,10 +12,13 @@ def _fetch(args: Namespace) -> None:
     
     resolved = DataResolver(
         args.input_file,
-        start=args.start,
-        end=args.end,
         cache_dir=args.cache,
     )
+    if args.start is not None or args.end is not None:
+        resolved = resolved.select_rows(
+            args.start,
+            args.end,
+        )
     
     if not args.checkpoint and not args.output:
         raise ValueError("At least one of --checkpoint and --output should be set.")

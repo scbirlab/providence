@@ -72,7 +72,7 @@ def test_dataframe_cache_does_not_nest_dataset_cache(tmp_path):
         {
             "x": [1, 2, 3],
         },
-        cache=str(tmp_path),
+        cache_dir=str(tmp_path),
     )
 
     assert os.environ["HF_HOME"] == str(tmp_path)

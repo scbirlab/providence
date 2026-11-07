@@ -1,6 +1,6 @@
 [project]
 name = "providence"
-version = "0.0.1"
+version = "0.0.2"
 authors = [
   { name="Eachan Johnson", email="eachan.johnson@crick.ac.uk" },
 ]
@@ -35,7 +35,7 @@ classifiers = [
 
 dependencies = [
   "carabiner-tools[pd,mpl]>=0.0.5.post3",
-  "datasets>=3",
+  "datasets>=3.0.0",
   "filelock",
   "huggingface_hub",
   "platformdirs>=4.4.0",

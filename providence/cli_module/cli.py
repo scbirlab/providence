@@ -8,6 +8,7 @@ from carabiner.cliutils import CLIOption, CLICommand, CLIApp
 
 from .. import app_name, __version__
 from .fetch import _fetch
+from .write import _write
 
 def main() -> None:
 
@@ -27,6 +28,11 @@ def main() -> None:
         '--force-write-data', '-f',
         action='store_true',
         help='Save data to disk from remote repos, instead of simply saving a reference.',
+    )
+    with_info = CLIOption(
+        '--with-info', '-i',
+        action='store_true',
+        help='Save data source information to disk as json.',
     )
     cache = CLIOption(
         '--cache',
@@ -71,9 +77,22 @@ def main() -> None:
             force_write,
             checkpoint,
             output_name,
+            with_info,
             cache,
         ],
         main=_fetch,
+    )
+
+    write_command = CLICommand(
+        "write",
+        description="Load a local or remote dataset, and save as a reloadable and verifiable providence checkpoint.",
+        options=[
+            input_filename,
+            with_info,
+            output_name,
+            cache,
+        ],
+        main=_write,
     )
     
     app = CLIApp(
@@ -82,6 +101,7 @@ def main() -> None:
         version=__version__, 
         commands=[
             get_command,
+            write_command,
         ],
     )
     app.run()

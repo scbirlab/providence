@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 from collections.abc import Iterable, Mapping
 import os
 from pathlib import Path
+import gzip
 
 from carabiner import print_err
 
@@ -224,7 +225,6 @@ class DataResolver:
         else:
             source = self.data_source
 
-
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
 
@@ -352,10 +352,46 @@ class DataResolver:
             )
         return data
 
-    # for compatibility
-    def save_checkpoint(self, *args, **kwargs):
-        return self.save(*args, **kwargs)
-
-    @classmethod
-    def load_checkpoint(cls, *args, **kwargs):
-        return cls.load(*args, **kwargs)
+    def write_table(
+        self,
+        output: str | os.PathLike,
+        include_source: bool = False
+    ) -> None:
+        output = Path(output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        dataset = self.data
+        print_err(
+            "[INFO] Saving dataset:\n" 
+            + str(dataset)
+            + "\n" 
+            + f"at {output} as", 
+            end=" ",
+        )
+        suffix = output.suffix
+        if str(output).removesuffix(".gz").endswith((".csv", ".tsv", ".txt")):
+            print_err("CSV.")
+            compressed = str(output).endswith(".gz")
+            opener = gzip.open if compressed else open
+            with opener(output, "wb") as f:
+                dataset.to_csv(
+                    f, 
+                    sep="," if str(output).removesuffix(".gz").endswith(".csv") else "\t",
+                    # compression="gzip" if compressed else None,
+                )
+        elif suffix == ".json":
+            print_err("JSON.")
+            dataset.to_json(output)
+        elif suffix == ".parquet":
+            print_err("Parquet.")
+            dataset.to_parquet(output)
+        elif suffix == ".hf":
+            print_err("Hugging Face dataset.")
+            dataset.save_to_disk(output)
+        else:
+            print_err(f"[WARNING] Unsure what format to save as for filename {output}. Defaulted to Hugging Face dataset.")
+            dataset.save_to_disk(str(output) + ".hf")
+        if include_source:
+            self.data_source.to_config(
+                filename=str(output.parent / output.stem) + "-info.json",
+            )
+        return None

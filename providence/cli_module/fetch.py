@@ -28,16 +28,11 @@ def _fetch(args: Namespace) -> None:
         out_dir = os.path.dirname(output)
         base = os.path.basename(output)
         
-        resolved.save_checkpoint(output, save_source_data=args.force_write_data)
+        resolved.save(output, save_source_data=args.force_write_data)
 
     if args.output:
-        output = args.output
-        out_dir = os.path.dirname(output)
-        base = os.path.basename(output)
-        if len(out_dir) > 0:
-            os.makedirs(out_dir, exist_ok=True)
-        _save_dataset(
-            resolved.data, 
-            output,
+        resolved.write_table(
+            args.output,
+            include_source=args.with_info,
         )
     return None
